@@ -277,12 +277,12 @@ namespace BahaTurret
                     var armorData = new ArmorPenetration.BulletPenetrationData(ray, hit);
                     ArmorPenetration.DoPenetrationRay(armorData, bullet.positiveCoefficient);
                     var penetration = bullet.penetration.Evaluate(distanceFromStart)/1000;
-                    var fulllyPenetrated = penetration*leftPenetration >
+                    var fullyPenetrated = penetration*leftPenetration >
                                            ((armor == null) ? 1f : armor.EquivalentThickness)*armorData.armorThickness;
                     var finalDirect = Vector3.Lerp(ray.direction, -hit.normal, bullet.positiveCoefficient);
 
 
-                    if (fulllyPenetrated)
+                    if (fullyPenetrated)
                     {
                         currentVelocity = finalDirect*currentVelocity.magnitude*leftPenetration;
                     }
@@ -352,7 +352,7 @@ namespace BahaTurret
                             {
                                 heatDamage = heatDamage/8;
                             }
-                            if (fulllyPenetrated)
+                            if (fullyPenetrated)
                             {
                                 heatDamage /= 8;
                             }
@@ -435,7 +435,7 @@ namespace BahaTurret
 
                     if (hitPart == null || (hitPart != null && hitPart.vessel != sourceVessel))
                     {
-                        if (!penetrated && !hasBounced && !fulllyPenetrated)
+                        if (!penetrated && !hasBounced && !fullyPenetrated)
                         {
                             //ricochet
                             hasBounced = true;
@@ -471,7 +471,7 @@ namespace BahaTurret
 
                             if (armor != null &&
                                 (penetration*leftPenetration > armor.outerArmorThickness/1000*armor.EquivalentThickness ||
-                                 fulllyPenetrated))
+                                 fullyPenetrated))
                             {
                                 switch (armor.explodeMode)
                                 {
@@ -487,7 +487,7 @@ namespace BahaTurret
                                         break;
                                 }
                             }
-                            if (fulllyPenetrated)
+                            if (fullyPenetrated)
                             {
                                 leftPenetration -= armorData.armorThickness/penetration;
                                 transform.position = armorData.hitResultOut.point;

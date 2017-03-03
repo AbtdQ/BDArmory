@@ -3,9 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 
-namespace BahaTurret.DamageSim
+namespace BahaTurret
 {
-    class ModuleAdditionalArmor : PartModule, IPartMassModifier, IPartCostModifier
+    class ModuleArmor : PartModule, IPartMassModifier, IPartCostModifier
     {
         public float GetModuleCost(float defaultCost, ModifierStagingSituation sit)
         {

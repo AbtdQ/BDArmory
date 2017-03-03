@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using UnityEngine;
 
-namespace BahaTurret.DamageSim
+namespace BahaTurret
 {
     class ModuleHealth : PartModule
     {

@@ -71,6 +71,9 @@
   <ItemGroup>
     <Compile Include="Armor\ArmorPenetration.cs" />
     <Compile Include="Armor\BDArmor.cs" />
+    <Compile Include="DamageSim\ModuleAdditionalArmor.cs" />
+    <Compile Include="DamageSim\ModuleHealth.cs" />
+    <Compile Include="DamageSim\ModuleRepair.cs" />
     <Compile Include="Misc\BahaTurretBullet.cs" />
     <Compile Include="Misc\CFEnable.cs" />
     <Compile Include="Parts\BDExplosivePart.cs" />

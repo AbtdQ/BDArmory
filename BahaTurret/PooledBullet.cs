@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using BahaTurret.Shaders;
+using static BahaTurret.DamageSim;
 using UnityEngine;
 
 namespace BahaTurret
@@ -86,6 +87,7 @@ namespace BahaTurret
         public float ballisticCoefficient;
 
         public float flightTimeElapsed = 0;
+        public float distanceFromStart = 0;
 
         bool collisionEnabled = false;
 
@@ -197,10 +199,35 @@ namespace BahaTurret
             }
         }
 
+        public void UpdateWidth(Camera c, float resizeFactor)
+        {
+            if (!gameObject.activeInHierarchy)
+            {
+                return;
+            }
+
+            float fov = c.fieldOfView;
+            float factor = (fov / 60) * resizeFactor *
+                           Mathf.Clamp(Vector3.Distance(transform.position, c.transform.position), 0, 3000) / 50;
+            float width1 = tracerStartWidth * factor * randomWidthScale;
+            float width2 = tracerEndWidth * factor * randomWidthScale;
+
+            bulletTrail.SetWidth(width1, width2);
+        }
+
+        void FadeColor()
+        {
+            Vector4 currentColorV = new Vector4(currentColor.r, currentColor.g, currentColor.b, currentColor.a);
+            Vector4 endColorV = new Vector4(projectileColor.r, projectileColor.g, projectileColor.b, projectileColor.a);
+            //float delta = (Vector4.Distance(currentColorV, endColorV)/0.15f) * TimeWarp.fixedDeltaTime;
+            float delta = TimeWarp.fixedDeltaTime;
+            Vector4 finalColorV = Vector4.MoveTowards(currentColor, endColorV, delta);
+            currentColor = new Color(finalColorV.x, finalColorV.y, finalColorV.z, Mathf.Clamp(finalColorV.w, 0.25f, 1f));
+        }
 
         void FixedUpdate()
         {
-            float distanceFromStart = Vector3.Distance(transform.position, startPosition);
+            distanceFromStart = Vector3.Distance(transform.position, startPosition);
             if (!gameObject.activeInHierarchy)
             {
                 return;
@@ -264,23 +291,7 @@ namespace BahaTurret
                 RaycastHit hit;
                 if (Physics.Raycast(ray, out hit, dist, 557057))
                 {
-                    Part hitPart = null; //determine when bullet collides with a target
-                    try
-                    {
-                        hitPart = Part.FromGO(hit.rigidbody.gameObject);
-                    }
-                    catch (NullReferenceException)
-                    {
-                    }
-
-                    if (DamageSim.UseModuleDamage(hitPart))
-                    {
-                        Hit(hitPart, ray, hit);
-                    }
-                    else
-                    {
-                        HitLegacy(hitPart, ray, hit, distanceFromStart);
-                    }
+                    Hit(ray, hit);
                 }
 
                 /*
@@ -324,7 +335,35 @@ namespace BahaTurret
             transform.position += currentVelocity*Time.fixedDeltaTime;
         }
 
-        private float GetImpactVelocity()
+        private void Hit(Ray ray, RaycastHit hit)
+        {
+            var hitPart = hit.collider.gameObject.GetComponentInParent<Part>();
+            var hitBuilding = hit.collider.gameObject.GetComponentUpwards<DestructibleBuilding>();
+
+            BulletHitResult hitResult;
+            if (hitPart != null)    // Hit a vessel part
+                hitResult = BulletHitPart(hitPart, ray, hit, this);
+            else if (hitBuilding != null)   // Hit a building
+                hitResult = BulletHitBuilding(hitBuilding, ray, hit, this);
+            else   // Hit scenery
+                hitResult = new BulletHitResult(IsRicochet(Vector3.Angle(currentVelocity, -hit.normal)) ? ArmorPenetrationResults.Richochet : ArmorPenetrationResults.NotPenetrated);
+
+            switch (hitResult.APResult)
+            {
+                case ArmorPenetrationResults.Richochet:
+                    OnRichochet(hit);
+                    break;
+                case ArmorPenetrationResults.NotPenetrated:
+                case ArmorPenetrationResults.Penetrated:
+                    KillBullet();
+                    break;
+                case ArmorPenetrationResults.FullyPenetrated:
+                    OnFullyPenetrated(hitResult.bulletPenetrationData);
+                    break;
+            }
+        }
+
+        public float GetImpactVelocity()
         {
             float impactVelocity = currentVelocity.magnitude;
 
@@ -343,65 +382,65 @@ namespace BahaTurret
             //the above number should be negative...
             impactVelocity += analyticDragVelAdjustment; //so add it to the impact velocity
 
-            if (impactVelocity < 0)
-            {
-                impactVelocity = 0;
-                //clamp the velocity to > 0, since it could drop below 0 if the bullet is fired upwards
-            }
             //Debug.Log("flight time: " + flightTimeElapsed + " BC: " + ballisticCoefficient + "\ninit speed: " + initialSpeed + " vel diff: " + analyticDragVelAdjustment);
-            return impactVelocity;
+            //clamp the velocity to > 0, since it could drop below 0 if the bullet is fired upwards
+            return Mathf.Clamp(impactVelocity, 0f, float.PositiveInfinity);
         }
 
-        public void UpdateWidth(Camera c, float resizeFactor)
+        public float GetPenetration()
         {
-            if (!gameObject.activeInHierarchy)
-            {
-                return;
-            }
-
-            float fov = c.fieldOfView;
-            float factor = (fov/60)*resizeFactor*
-                           Mathf.Clamp(Vector3.Distance(transform.position, c.transform.position), 0, 3000)/50;
-            float width1 = tracerStartWidth*factor*randomWidthScale;
-            float width2 = tracerEndWidth*factor*randomWidthScale;
-
-            bulletTrail.SetWidth(width1, width2);
+            return bullet.penetration.Evaluate(distanceFromStart);
         }
 
+        void OnRichochet(RaycastHit hit)
+        {
+            if (hasBounced) KillBullet();
+            else hasBounced = true;
+
+            if (BDArmorySettings.BULLET_HITS)
+                BulletHitFX.CreateBulletHit(hit.point, hit.normal, true);
+
+            tracerStartWidth /= 2;
+            tracerEndWidth /= 2;
+
+            transform.position = hit.point;
+            currentVelocity = Vector3.Reflect(currentVelocity, hit.normal);
+            currentVelocity = (Vector3.Angle(currentVelocity, -hit.normal) / 150) * currentVelocity * 0.65f;
+
+            Vector3 randomDirection = UnityEngine.Random.rotation * Vector3.one;
+            currentVelocity = Vector3.RotateTowards(currentVelocity, randomDirection, UnityEngine.Random.Range(0f, 5f) * Mathf.Deg2Rad, 0);
+        }
+
+        void OnFullyPenetrated(ArmorPenetration.BulletPenetrationData bulletPenetrationData)
+        {
+            transform.position = prevPosition = bulletPenetrationData.hitResultOut.point;
+            currentVelocity = Vector3.Lerp(bulletPenetrationData.rayIn.direction, -bulletPenetrationData.hitResultIn.normal, bullet.positiveCoefficient).normalized * currentVelocity.magnitude * leftPenetration;
+            leftPenetration -= bulletPenetrationData.armorThickness * 1000f / GetPenetration();
+            flightTimeElapsed -= Time.fixedDeltaTime;
+            FixedUpdate();
+        }
 
         void KillBullet()
         {
             gameObject.SetActive(false);
         }
 
-
-        void FadeColor()
+        static public bool IsRicochetOnPart(Part part, float angleFromNormal, float impactVel)
         {
-            Vector4 currentColorV = new Vector4(currentColor.r, currentColor.g, currentColor.b, currentColor.a);
-            Vector4 endColorV = new Vector4(projectileColor.r, projectileColor.g, projectileColor.b, projectileColor.a);
-            //float delta = (Vector4.Distance(currentColorV, endColorV)/0.15f) * TimeWarp.fixedDeltaTime;
-            float delta = TimeWarp.fixedDeltaTime;
-            Vector4 finalColorV = Vector4.MoveTowards(currentColor, endColorV, delta);
-            currentColor = new Color(finalColorV.x, finalColorV.y, finalColorV.z, Mathf.Clamp(finalColorV.w, 0.25f, 1f));
-        }
-
-        bool RicochetOnPart(Part p, float angleFromNormal, float impactVel)
-        {
-            float hitTolerance = p.crashTolerance;
+            float hitTolerance = part.crashTolerance;
             //15 degrees should virtually guarantee a ricochet, but 75 degrees should nearly always be fine
-            float chance = (((angleFromNormal - 5)/75)*(hitTolerance/150))*100/Mathf.Clamp01(impactVel/600);
+            float chance = (((angleFromNormal - 5) / 75) * (hitTolerance / 150)) * 100 / Mathf.Clamp01(impactVel / 600);
             float random = UnityEngine.Random.Range(0f, 100f);
-            if (BDArmorySettings.DRAW_DEBUG_LABELS) Debug.Log("[BDArmory]:Ricochet chance: "+chance);
-            if (random < chance)
-            {
-                return true;
-            }
-            else
-            {
-                return false;
-            }
+            if (BDArmorySettings.DRAW_DEBUG_LABELS) Debug.Log("[BDArmory]:Ricochet chance: " + chance);
+            return random < chance;
         }
 
+        static public bool IsRicochet(float angleFromNormal)
+        {
+            return UnityEngine.Random.Range(-75f, 90f) > 90 - angleFromNormal;
+        }
+
+        /* // Legacy
         private float CalculateExplosionProbability(Part part)
         {
             float probability = 0;
@@ -411,10 +450,10 @@ namespace BahaTurret
                 switch (current.resourceName)
                 {
                     case "LiquidFuel":
-                        probability += (float) (current.amount/current.maxAmount);
+                        probability += (float)(current.amount / current.maxAmount);
                         break;
                     case "Oxidizer":
-                        probability += (float) (current.amount/current.maxAmount);
+                        probability += (float)(current.amount / current.maxAmount);
                         break;
                 }
             }
@@ -423,12 +462,7 @@ namespace BahaTurret
             return probability;
         }
 
-        private void Hit(Part hitPart, Ray ray, RaycastHit hit)
-        {
-            throw new NotImplementedException();
-        }
-
-        private void HitLegacy(Part hitPart, Ray ray, RaycastHit hit, float distanceFromStart)
+        private void HitLegacy(Part hitPart, Ray ray, RaycastHit hit)
         {
             bool penetrated = true;
             var armor = BDArmor.GetArmor(hit.collider, hitPart);
@@ -464,15 +498,11 @@ namespace BahaTurret
 
                 if (hitPart != null) //see if it will ricochet of the part
                 {
-                    penetrated = !RicochetOnPart(hitPart, hitAngle, impactVelocity);
+                    penetrated = !IsRicochetOnPart(hitPart, hitAngle, impactVelocity);
                 }
                 else //see if it will ricochet off scenery
                 {
-                    float reflectRandom = UnityEngine.Random.Range(-75f, 90f);
-                    if (reflectRandom > 90 - hitAngle)
-                    {
-                        penetrated = false;
-                    }
+                    penetrated = !IsRicochet(hitAngle);
                 }
 
 
@@ -637,6 +667,6 @@ namespace BahaTurret
                     }
                 }
             }
-        }
+        }*/
     }
 }

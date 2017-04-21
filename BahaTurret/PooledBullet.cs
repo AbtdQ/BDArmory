@@ -285,12 +285,14 @@ namespace BahaTurret
 
             if (collisionEnabled)
             {
-                float dist = initialSpeed*TimeWarp.fixedDeltaTime;
+                //float dist = initialSpeed*TimeWarp.fixedDeltaTime;
+                float dist = Vector3.Distance(prevPosition, currPosition);
 
                 Ray ray = new Ray(prevPosition, currPosition - prevPosition);
                 RaycastHit hit;
                 if (Physics.Raycast(ray, out hit, dist, 557057))
                 {
+                    //if (BDArmorySettings.DRAW_DEBUG_LABELS) Debug.Log($"[{nameof(PooledBullet)}]{bullet.name} Raycast Hit! {Vector3.Angle(currentVelocity, -hit.normal)}бу");
                     Hit(ray, hit);
                 }
 
@@ -318,7 +320,7 @@ namespace BahaTurret
 				*/
             }
 
-            if (bulletType == PooledBulletTypes.Explosive && airDetonation && distanceFromStart > detonationRange)
+            if (bulletType == PooledBulletTypes.Explosive && airDetonation && distanceFromStart > detonationRange && bullet.bulletType == BulletInfo.BulletTypes.HE)
             {
                 //detonate
                 ExplosionFX.CreateExplosion(transform.position, radius, blastPower, blastHeat, sourceVessel,
@@ -346,15 +348,17 @@ namespace BahaTurret
             else if (hitBuilding != null)   // Hit a building
                 hitResult = BulletHitBuilding(hitBuilding, ray, hit, this);
             else   // Hit scenery
-                hitResult = new BulletHitResult(IsRicochet(Vector3.Angle(currentVelocity, -hit.normal)) ? ArmorPenetrationResults.Richochet : ArmorPenetrationResults.NotPenetrated);
+                hitResult = BulletHitScenery(ray, hit, this);
 
             switch (hitResult.APResult)
             {
-                case ArmorPenetrationResults.Richochet:
-                    OnRichochet(hit);
+                case ArmorPenetrationResults.Ricochet:
+                    OnRicochet(hit);
                     break;
                 case ArmorPenetrationResults.NotPenetrated:
                 case ArmorPenetrationResults.Penetrated:
+                    if (BDArmorySettings.BULLET_HITS)
+                        BulletHitFX.CreateBulletHit(hit.point, hit.normal, true);
                     KillBullet();
                     break;
                 case ArmorPenetrationResults.FullyPenetrated:
@@ -367,20 +371,23 @@ namespace BahaTurret
         {
             float impactVelocity = currentVelocity.magnitude;
 
-            float analyticDragVelAdjustment =
-                (float)
-                FlightGlobals.getAtmDensity(FlightGlobals.getStaticPressure(currPosition),
-                    FlightGlobals.getExternalTemperature(currPosition));
-            analyticDragVelAdjustment *= flightTimeElapsed * initialSpeed;
-            analyticDragVelAdjustment += 2 * ballisticCoefficient;
+            if (dragType == BulletDragTypes.AnalyticEstimate)
+            {
+                float analyticDragVelAdjustment =
+                    (float)
+                    FlightGlobals.getAtmDensity(FlightGlobals.getStaticPressure(currPosition),
+                        FlightGlobals.getExternalTemperature(currPosition));
+                analyticDragVelAdjustment *= flightTimeElapsed * initialSpeed;
+                analyticDragVelAdjustment += 2 * ballisticCoefficient;
 
-            analyticDragVelAdjustment = 2 * ballisticCoefficient * initialSpeed / analyticDragVelAdjustment;
-            //velocity as a function of time under the assumption of a projectile only acted upon by drag with a constant drag area
+                analyticDragVelAdjustment = 2 * ballisticCoefficient * initialSpeed / analyticDragVelAdjustment;
+                //velocity as a function of time under the assumption of a projectile only acted upon by drag with a constant drag area
 
-            analyticDragVelAdjustment = analyticDragVelAdjustment - initialSpeed;
-            //since the above was velocity as a function of time, but we need a difference in drag, subtract the initial velocity
-            //the above number should be negative...
-            impactVelocity += analyticDragVelAdjustment; //so add it to the impact velocity
+                analyticDragVelAdjustment = analyticDragVelAdjustment - initialSpeed;
+                //since the above was velocity as a function of time, but we need a difference in drag, subtract the initial velocity
+                //the above number should be negative...
+                impactVelocity += analyticDragVelAdjustment; //so add it to the impact velocity
+            }
 
             //Debug.Log("flight time: " + flightTimeElapsed + " BC: " + ballisticCoefficient + "\ninit speed: " + initialSpeed + " vel diff: " + analyticDragVelAdjustment);
             //clamp the velocity to > 0, since it could drop below 0 if the bullet is fired upwards
@@ -392,52 +399,104 @@ namespace BahaTurret
             return bullet.penetration.Evaluate(distanceFromStart);
         }
 
-        void OnRichochet(RaycastHit hit)
+        public Vector3 GetNormalizedDirection(ArmorPenetration.BulletPenetrationData bulletPenetrationData)      // Shell Normalization
         {
-            if (hasBounced) KillBullet();
-            else hasBounced = true;
+            return Vector3.Lerp(bulletPenetrationData.rayIn.direction, -bulletPenetrationData.hitResultIn.normal, bullet.positiveCoefficient).normalized;
+        }
 
+        public float GetHeatDamageToPart(float partCrashTolerance, float partMass, float impactVelocity)
+        {
+            return (mass / (partCrashTolerance * partMass)) * impactVelocity * impactVelocity * BDArmorySettings.DMG_MULTIPLIER;
+        }
+
+        public float GetKineticEnergy()
+        {
+            return 0.5f * (mass * 1000f) * Mathf.Pow(GetImpactVelocity(), 2f);
+        }
+
+        public float GetDamageToBuilding()
+        {
+            return mass * initialSpeed * initialSpeed * BDArmorySettings.DMG_MULTIPLIER / 9600f;    // 12000f
+        }
+
+        void OnRicochet(RaycastHit hit)
+        {
             if (BDArmorySettings.BULLET_HITS)
                 BulletHitFX.CreateBulletHit(hit.point, hit.normal, true);
 
-            tracerStartWidth /= 2;
-            tracerEndWidth /= 2;
+            if (hasBounced)
+                KillBullet();
+            else
+            {
+                hasBounced = true;
+                currPosition = hit.point;
+                bulletTrail.SetPosition(1, currPosition);
 
-            transform.position = hit.point;
-            currentVelocity = Vector3.Reflect(currentVelocity, hit.normal);
-            currentVelocity = (Vector3.Angle(currentVelocity, -hit.normal) / 150) * currentVelocity * 0.65f;
+                tracerStartWidth /= 2;
+                tracerEndWidth /= 2;
 
-            Vector3 randomDirection = UnityEngine.Random.rotation * Vector3.one;
-            currentVelocity = Vector3.RotateTowards(currentVelocity, randomDirection, UnityEngine.Random.Range(0f, 5f) * Mathf.Deg2Rad, 0);
+                transform.position = hit.point;
+                currentVelocity = Vector3.Reflect(currentVelocity, hit.normal);
+                currentVelocity = (Vector3.Angle(currentVelocity, -hit.normal) / 150) * currentVelocity * 0.65f;
+
+                Vector3 randomDirection = UnityEngine.Random.rotation * Vector3.one;
+                currentVelocity = Vector3.RotateTowards(currentVelocity, randomDirection, UnityEngine.Random.Range(0f, 5f) * Mathf.Deg2Rad, 0);
+
+                //if (BDArmorySettings.DRAW_DEBUG_LABELS)
+                //    Debug.Log($"[{nameof(PooledBullet)}]Ricochet");
+            }
         }
 
         void OnFullyPenetrated(ArmorPenetration.BulletPenetrationData bulletPenetrationData)
         {
+            if (BDArmorySettings.BULLET_HITS)
+            {
+                BulletHitFX.CreateBulletHit(bulletPenetrationData.hitResultIn.point, bulletPenetrationData.hitResultIn.normal, false);
+                BulletHitFX.CreateBulletHit(bulletPenetrationData.hitResultOut.point, bulletPenetrationData.hitResultOut.normal, false);
+            }
             transform.position = prevPosition = bulletPenetrationData.hitResultOut.point;
-            currentVelocity = Vector3.Lerp(bulletPenetrationData.rayIn.direction, -bulletPenetrationData.hitResultIn.normal, bullet.positiveCoefficient).normalized * currentVelocity.magnitude * leftPenetration;
-            leftPenetration -= bulletPenetrationData.armorThickness * 1000f / GetPenetration();
+            leftPenetration = Mathf.Clamp01(leftPenetration - bulletPenetrationData.armorThickness / GetPenetration());
+            currentVelocity = GetNormalizedDirection(bulletPenetrationData).normalized * currentVelocity.magnitude * leftPenetration;
             flightTimeElapsed -= Time.fixedDeltaTime;
             FixedUpdate();
+
+            //if (BDArmorySettings.DRAW_DEBUG_LABELS)
+            //    Debug.Log($"[{nameof(PooledBullet)}]Fully penetrated");
         }
 
         void KillBullet()
         {
             gameObject.SetActive(false);
+
+            //if (BDArmorySettings.DRAW_DEBUG_LABELS)
+            //    Debug.Log($"[{nameof(PooledBullet)}]Bullet killed");
         }
 
-        static public bool IsRicochetOnPart(Part part, float angleFromNormal, float impactVel)
+        public bool IsRicochetOnPart(Part part, float angleFromNormal, float impactVel)
         {
-            float hitTolerance = part.crashTolerance;
-            //15 degrees should virtually guarantee a ricochet, but 75 degrees should nearly always be fine
-            float chance = (((angleFromNormal - 5) / 75) * (hitTolerance / 150)) * 100 / Mathf.Clamp01(impactVel / 600);
-            float random = UnityEngine.Random.Range(0f, 100f);
-            if (BDArmorySettings.DRAW_DEBUG_LABELS) Debug.Log("[BDArmory]:Ricochet chance: " + chance);
-            return random < chance;
+            if (angleFromNormal < bullet.ricochetAngleMin)
+                return false;
+            else if (angleFromNormal > bullet.ricochetAngleMax)
+                return true;
+            else
+            {
+                float hitTolerance = part.crashTolerance;
+                //15 degrees should virtually guarantee a ricochet, but 75 degrees should nearly always be fine
+                float chance = (((angleFromNormal - 5) / 75) * (hitTolerance / 150)) * 100 / Mathf.Clamp01(impactVel / 600);
+                float random = UnityEngine.Random.Range(0f, 100f);
+                if (BDArmorySettings.DRAW_DEBUG_LABELS) Debug.Log("[PooledBullet]:Ricochet chance: " + chance);
+                return random < chance;
+            }
         }
 
-        static public bool IsRicochet(float angleFromNormal)
+        public bool IsRicochet(float angleFromNormal)
         {
-            return UnityEngine.Random.Range(-75f, 90f) > 90 - angleFromNormal;
+            if (angleFromNormal < bullet.ricochetAngleMin)
+                return false;
+            else if (angleFromNormal > bullet.ricochetAngleMax)
+                return true;
+            else
+                return UnityEngine.Random.Range(-75f, 90f) > 90 - angleFromNormal;
         }
 
         /* // Legacy

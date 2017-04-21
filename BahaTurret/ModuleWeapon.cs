@@ -31,7 +31,7 @@ namespace BahaTurret
             Cannon,
             Laser
         }
-       
+
         public enum WeaponStates
         {
             Enabled,
@@ -45,20 +45,20 @@ namespace BahaTurret
             None,
             AnalyticEstimate,
             NumericalIntegration
-        }          
-               
+        }
+
         public WeaponStates weaponState = WeaponStates.Disabled;
-        
+
         //animations
         private float fireAnimSpeed = 1;
             //is set when setting up animation so it plays a full animation for each shot (animation speed depends on rate of fire)
 
-        public float bulletBallisticCoefficient;     
-        
+        public float bulletBallisticCoefficient;
+
         public WeaponTypes eWeaponType;
-                
+
         public float heat = 0;
-        public bool isOverheated = false;       
+        public bool isOverheated = false;
         private bool wasFiring = false;
             //used for knowing when to stop looped audio clip (when you're not shooting, but you were)
 
@@ -90,13 +90,13 @@ namespace BahaTurret
         {
             get { return Time.time - timeFired < 1; }
         }
-        
+
         //used to reduce volume of audio if multiple guns are being fired (needs to be improved/changed)
         //private int numberOfGuns = 0;
 
         //UI gauges(next to staging icon)
         private ProtoStageIconInfo heatGauge = null;
-       
+
         //AI will fire gun if target is within this Cos(angle) of barrel
         public float maxAutoFireCosAngle = 0.9993908f; //corresponds to ~2 degrees
 
@@ -105,13 +105,13 @@ namespace BahaTurret
         Vector3 bulletPrediction;
         Vector3 fixedLeadOffset = Vector3.zero;
         float targetLeadDistance = 0;
-        
+
         //gapless particles
         List<BDAGaplessParticleEmitter> gaplessEmitters = new List<BDAGaplessParticleEmitter>();
 
         //muzzleflash emitters
         List<KSPParticleEmitter> muzzleFlashEmitters;
-        
+
         //module references
         [KSPField] public int turretID = 0;
         public ModuleTurret turret;
@@ -189,15 +189,15 @@ namespace BahaTurret
         public string GetSubLabel()
         {
             return string.Empty;
-        }  
-                
+        }
+
         #endregion
 
         #region KSPFields
-                
+
         [KSPField]
         public string shortName = string.Empty;
-                
+
         [KSPField]
         public string fireTransformName = "fireTransform";
         public Transform[] fireTransforms;
@@ -243,9 +243,13 @@ namespace BahaTurret
         [KSPField]
         public float bulletDragArea = 1.209675e-5f;
 
-        private BulletInfo bulletInfo;
+        //private BulletInfo bulletInfo;
+        [KSPField(isPersistant = true, guiActive = true, guiActiveEditor = true, guiName = "Ammo Type")]
+        public string bulletType = string.Empty;
+
         [KSPField]
-        public string bulletType = "def";
+        public string availableBulletTypes = "def";
+        public string[] availableBulletTypesArr;
 
         [KSPField]
         public string ammoName = "50CalAmmo"; //resource usage TODO: multi resource requirement
@@ -333,7 +337,7 @@ namespace BahaTurret
         //Used for scaling laser damage down based on distance.
         [KSPField]
         public float tanAngle = 0.0001f;
-        //Angle of divergeance/2. Theoretical minimum value calculated using θ = (1.22 L/RL)/2, 
+        //Angle of divergeance/2. Theoretical minimum value calculated using θ = (1.22 L/RL)/2,
         //where L is laser's wavelength and RL is the radius of the mirror (=gun).
 
 
@@ -418,7 +422,7 @@ namespace BahaTurret
 
             //Debug.Log("incrementing ripple index to: " + weaponManager.gunRippleIndex);
         }
-        
+
         #endregion
 
         #region KSPActions
@@ -447,6 +451,13 @@ namespace BahaTurret
             }
         }
 
+        [KSPEvent(guiActive = true, guiActiveEditor = true, guiName = "Switch Ammo")]
+        public void SwitchAmmo()
+        {
+            int curIndex = availableBulletTypesArr.IndexOf(bulletType);
+            bulletType = (curIndex == availableBulletTypesArr.Length - 1 ? availableBulletTypesArr[0] : availableBulletTypesArr[curIndex + 1]);
+        }
+
         bool agHoldFiring = false;
 
         [KSPAction("Fire (Toggle)")]
@@ -459,6 +470,12 @@ namespace BahaTurret
         public void AGFireHold(KSPActionParam param)
         {
             StartCoroutine(FireHoldRoutine(param.group));
+        }
+
+        [KSPAction("Switch Ammo")]
+        public void AGSwitchAmmo(KSPActionParam param)
+        {
+            SwitchAmmo();
         }
 
         IEnumerator FireHoldRoutine(KSPActionGroup group)
@@ -618,9 +635,18 @@ namespace BahaTurret
                 fireState = Misc.SetUpSingleAnimation(fireAnimName, this.part);
                 fireState.enabled = false;
             }
-            bulletInfo = BulletInfo.bullets[bulletType];
-            if (bulletInfo == null)
-                Debug.Log("[BDArmory]: Failed To load bullet!");
+            //bulletInfo = BulletInfo.bullets[bulletType];
+            //if (bulletInfo == null)
+            //    Debug.Log("[BDArmory]: Failed To load bullet!");
+
+            availableBulletTypesArr = availableBulletTypes.Split();
+            foreach (string bt in availableBulletTypesArr)
+            {
+                if (BulletInfo.bullets[bt] == null)
+                    Debug.Log("[BDArmory]: Failed To load bullet!");
+            }
+            if (string.IsNullOrEmpty(bulletType)) bulletType = availableBulletTypesArr[0];
+
             BDArmorySettings.OnVolumeChange += UpdateVolume;
         }
 
@@ -1392,7 +1418,7 @@ namespace BahaTurret
 
             UpdateVolume();
         }
-             
+
 
         #endregion
 
@@ -1484,7 +1510,7 @@ namespace BahaTurret
 
                 targetLeadDistance = Vector3.Distance(finalTarget, fireTransforms[0].position);
 
-                fixedLeadOffset = originalTarget - finalTarget; //for aiming fixed guns to moving target	
+                fixedLeadOffset = originalTarget - finalTarget; //for aiming fixed guns to moving target
 
 
                 //airdetonation
@@ -1684,7 +1710,7 @@ namespace BahaTurret
                         /*
                         if(gameObject.GetComponent<LineRenderer>()!=null)
                         {
-                            gameObject.GetComponent<LineRenderer>().enabled = false;	
+                            gameObject.GetComponent<LineRenderer>().enabled = false;
                         }
                         */
                     }

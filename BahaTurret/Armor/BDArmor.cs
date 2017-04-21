@@ -6,6 +6,7 @@ using UnityEngine;
 
 namespace BahaTurret
 {
+    [Obsolete("Use ModuleArmor instead")]
     public class BDArmor
     {
         public float EquivalentThickness { get; private set; }
@@ -81,6 +82,7 @@ namespace BahaTurret
                 explodeScale*blastHeat, part.vessel, FlightGlobals.upAxis, explModelPath, explSoundPath);
         }
 
+        [Obsolete("Use ModuleArmor instead")]
         public static BDArmor GetArmor(Collider collider, Part hitPart)
         {
             if (!hitPart)

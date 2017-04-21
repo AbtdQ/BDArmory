@@ -72,8 +72,10 @@
     <Compile Include="Armor\ArmorPenetration.cs" />
     <Compile Include="Armor\BDArmor.cs" />
     <Compile Include="DamageSim\DamageSim.cs" />
-    <Compile Include="DamageSim\ModuleArmor.cs" />
-    <Compile Include="DamageSim\ModuleHealth.cs" />
+    <Compile Include="Armor\ModuleArmor.cs" />
+    <Compile Include="DamageSim\IDamageReceiver.cs" />
+    <Compile Include="DamageSim\ModuleDestroyablePart.cs" />
+    <Compile Include="DamageSim\ModuleExplosiveRes.cs" />
     <Compile Include="DamageSim\ModuleRepair.cs" />
     <Compile Include="Misc\BahaTurretBullet.cs" />
     <Compile Include="Misc\CFEnable.cs" />

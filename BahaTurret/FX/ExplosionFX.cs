@@ -120,31 +120,11 @@ namespace BahaTurret
 						}
 					}
 
-
                     if (!ignoreParts.Contains(part) && part.physicalSignificance == Part.PhysicalSignificance.FULL &&
                         (!sourceVessel || sourceVessel != missileSource))
                     {
                         ignoreParts.Add(part);
-                        Rigidbody rb = part.GetComponent<Rigidbody>();
-                        if (rb)
-                        {
-                            rb.AddForceAtPosition(ray.direction*power*distanceFactor*ExplosionImpulseMultiplier,
-                                rayHit.point, ForceMode.Impulse);
-                        }
-                        if (heat < 0)
-                        {
-                            heat = power;
-                        }
-                        float heatDamage = (BDArmorySettings.DMG_MULTIPLIER/100)*ExplosionHeatMultiplier*heat*
-                                           distanceFactor/part.crashTolerance;
-                        float excessHeat = Mathf.Max(0, (float) (part.temperature + heatDamage - part.maxTemp));
-                        part.temperature += heatDamage;
-                        if (BDArmorySettings.DRAW_DEBUG_LABELS)
-                            Debug.Log("[BDArmory]:====== Explosion ray hit part! Damage: " + heatDamage);
-                        if (excessHeat > 0 && part.parent)
-                        {
-                            part.parent.temperature += excessHeat;
-                        }
+                        DamageSim.ExplosionHitPart(part, ray, rayHit, heat, power, distanceFactor);
                         return;
                     }
                 }
@@ -154,13 +134,7 @@ namespace BahaTurret
                 if (building && !ignoreBldgs.Contains(building))
                 {
                     ignoreBldgs.Add(building);
-                    float damageToBuilding = (BDArmorySettings.DMG_MULTIPLIER/100)*ExplosionHeatMultiplier*0.00645f*
-                                             power*distanceFactor;
-                    if (damageToBuilding > building.impactMomentumThreshold/10) building.AddDamage(damageToBuilding);
-                    if (building.Damage > building.impactMomentumThreshold) building.Demolish();
-                    if (BDArmorySettings.DRAW_DEBUG_LABELS)
-                        Debug.Log("[BDArmory]:== Explosion hit destructible building! Damage: " +
-                                  (damageToBuilding).ToString("0.00") + ", total Damage: " + building.Damage);
+                    DamageSim.ExplosionHitBuilding(building, power, distanceFactor);
                 }
             }
         }
@@ -170,7 +144,7 @@ namespace BahaTurret
 
 		public static void DoExplosionDamage(Vector3 position, float power, float heat, float maxDistance, Vessel sourceVessel)
 		{
-			if(BDArmorySettings.DRAW_DEBUG_LABELS) Debug.Log("[BDArmory]: ======= Doing explosion sphere =========");
+			if(BDArmorySettings.DRAW_DEBUG_LABELS) Debug.Log($"[{nameof(ExplosionFX)}]: ======= Doing explosion sphere =========");
 			ignoreParts.Clear();
 			ignoreBuildings.Clear();
 

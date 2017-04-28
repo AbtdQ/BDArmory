@@ -10,8 +10,6 @@ namespace BahaTurret
     {
         public enum ArmorShapes { Box, Plane }
 
-        static public ModuleArmor _defaultArmor = new ModuleArmor();
-
         #region KSPField UI
 
         [KSPField(isPersistant = true, guiActive = true, guiActiveEditor = true, guiName = "Armor", guiUnits = "mm")]
